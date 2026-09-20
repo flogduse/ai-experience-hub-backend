@@ -1,0 +1,6 @@
+node_modules/
+.env
+.DS_Store
+*.log
+
+# Prisma generated client if using a custom location, but standard node_modules is sufficient.

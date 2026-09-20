@@ -1,0 +1,104 @@
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+// User Models
+model User {
+  id           String     @id @default(uuid())
+  username     String     @unique
+  email        String     @unique
+  passwordHash String
+  role         Role       @default(USER)
+  badges       String[]   @default([])
+  createdAt    DateTime   @default(now())
+  updatedAt    DateTime   @updatedAt
+
+  projects     Project[]  @relation("CreatedProjects")
+  bookmarks    Bookmark[]
+  reports      Report[]   @relation("UserReports")
+}
+
+enum Role {
+  USER
+  CREATOR
+  MODERATOR
+}
+
+// Core Project Model
+model Project {
+  id             String         @id @default(uuid())
+  title          String
+  description    String
+  externalUrl    String         // URL where the logic/game is hosted
+  previewImgUrl  String?
+  aiModelsUsed   String[]       @default([])
+  requiresAuth   Boolean        @default(false)
+  isFree         Boolean        @default(true)
+  remixAllowed   Boolean        @default(false)
+  status         ProjectStatus  @default(PENDING)
+  
+  metrics        ProjectMetrics?
+  
+  createdAt      DateTime       @default(now())
+  updatedAt      DateTime       @updatedAt
+
+  creatorId      String
+  creator        User           @relation("CreatedProjects", fields: [creatorId], references: [id])
+  
+  bookmarks      Bookmark[]
+  reports        Report[]       @relation("ReportedProject")
+}
+
+enum ProjectStatus {
+  PENDING
+  APPROVED
+  REJECTED
+  NEEDS_REVIEW
+  TAKEN_DOWN
+}
+
+model ProjectMetrics {
+  id           String   @id @default(uuid())
+  projectId    String   @unique
+  project      Project  @relation(fields: [projectId], references: [id], onDelete: Cascade)
+  launchCount  Int      @default(0)
+  saveCount    Int      @default(0)
+  viewCount    Int      @default(0)
+}
+
+// Engagement Models
+model Bookmark {
+  id        String   @id @default(uuid())
+  userId    String
+  projectId String
+  createdAt DateTime @default(now())
+
+  user      User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  project   Project  @relation(fields: [projectId], references: [id], onDelete: Cascade)
+
+  @@unique([userId, projectId])
+}
+
+// Moderation
+model Report {
+  id               String       @id @default(uuid())
+  projectId        String
+  reportedByUserId String
+  reason           String
+  status           ReportStatus @default(OPEN)
+  createdAt        DateTime     @default(now())
+  updatedAt        DateTime     @updatedAt
+
+  project          Project      @relation("ReportedProject", fields: [projectId], references: [id], onDelete: Cascade)
+  reportedBy       User         @relation("UserReports", fields: [reportedByUserId], references: [id], onDelete: Cascade)
+}
+
+enum ReportStatus {
+  OPEN
+  RESOLVED
+}
