@@ -1,20 +1,25 @@
 import express from 'express';
 import cors from 'cors';
 import dotenv from 'dotenv';
+import passport from 'passport';
 import { PrismaClient } from '@prisma/client';
 
 import authRoutes from './routes/auth.routes.js';
 import projectRoutes from './routes/project.routes.js';
 import adminRoutes from './routes/admin.routes.js';
+import { configurePassport } from './config/passport.js';
 
 dotenv.config();
 
 const app = express();
 export const prisma = new PrismaClient(); // Exported for use in controllers
 
+configurePassport();
+
 // Middleware
 app.use(cors());
 app.use(express.json());
+app.use(passport.initialize());
 
 // Main Routes
 app.use('/api/auth', authRoutes);
