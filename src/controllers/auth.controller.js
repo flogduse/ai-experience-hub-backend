@@ -55,7 +55,13 @@ export const login = async (req, res) => {
     const { email, password } = req.body;
 
     const user = await prisma.user.findUnique({ where: { email } });
-    const passwordOk = user
+
+    // Google-only accounts have no password set.
+    if (user && !user.passwordHash) {
+      return res.status(401).json({ error: 'This account uses Google login.' });
+    }
+
+    const passwordOk = user?.passwordHash
       ? await bcrypt.compare(password, user.passwordHash)
       : await bcrypt.compare(password, DUMMY_HASH);
 
@@ -76,6 +82,25 @@ export const login = async (req, res) => {
   } catch (error) {
     console.error(error);
     res.status(500).json({ error: 'Something went wrong during login.' });
+  }
+};
+
+// Called after Passport verifies the Google profile (req.user = DB user).
+// Issues the same JWT shape as login, then bounces to the frontend.
+export const googleCallback = async (req, res) => {
+  try {
+    const user = req.user;
+    const token = jwt.sign(
+      { id: user.id, username: user.username, role: user.role },
+      process.env.JWT_SECRET,
+      { expiresIn: JWT_EXPIRES_IN }
+    );
+
+    const frontendUrl = process.env.FRONTEND_URL || 'http://localhost:3000';
+    res.redirect(`${frontendUrl}/auth/success?token=${token}`);
+  } catch (error) {
+    console.error(error);
+    res.status(500).json({ error: 'Google sign-in succeeded but session creation failed.' });
   }
 };
 

@@ -1,5 +1,6 @@
 import express from 'express';
-import { register, login, getProfile } from '../controllers/auth.controller.js';
+import passport from 'passport';
+import { register, login, getProfile, googleCallback } from '../controllers/auth.controller.js';
 import { authenticate } from '../middlewares/auth.middleware.js';
 import { validate, schemas } from '../middlewares/validate.middleware.js';
 import { authLimiter } from '../middlewares/rateLimit.middleware.js';
@@ -10,6 +11,25 @@ const router = express.Router();
 // Rate-limited: prevents unlimited password guessing / registration spam.
 router.post('/register', authLimiter, validate(schemas.register), register);
 router.post('/login', authLimiter, validate(schemas.login), login);
+
+// Google OAuth — declared BEFORE /:username so it isn't swallowed by it.
+// `session: false` everywhere: we use JWTs, not Passport sessions.
+router.get(
+  '/google',
+  authLimiter,
+  passport.authenticate('google', { scope: ['profile', 'email'], session: false })
+);
+router.get(
+  '/google/callback',
+  passport.authenticate('google', {
+    session: false,
+    failureRedirect: '/api/auth/google/failure',
+  }),
+  googleCallback
+);
+router.get('/google/failure', (req, res) => {
+  res.status(401).json({ error: 'Google authentication failed.' });
+});
 
 // Current user's own account (from token, not URL).
 router.get('/me', authenticate, async (req, res) => {

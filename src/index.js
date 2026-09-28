@@ -1,7 +1,9 @@
 import express from 'express';
 import cors from 'cors';
 import dotenv from 'dotenv';
+import passport from 'passport';
 
+import { configurePassport } from './config/passport.js';
 import authRoutes from './routes/auth.routes.js';
 import projectRoutes from './routes/project.routes.js';
 import adminRoutes from './routes/admin.routes.js';
@@ -17,6 +19,10 @@ if (missing.length > 0) {
 }
 
 const app = express();
+
+// Google OAuth strategy (boot-safe: logs a warning and disables Google
+// login instead of crashing when GOOGLE_* env vars are missing).
+configurePassport();
 
 // --- Security & boilerplate middleware ---
 
@@ -45,6 +51,7 @@ if (allowedOrigins.length > 0) {
 }
 
 app.use(express.json({ limit: '100kb' }));
+app.use(passport.initialize());
 
 // Lightweight request logger — dev only; use real log aggregation in prod.
 if (process.env.NODE_ENV !== 'production') {
