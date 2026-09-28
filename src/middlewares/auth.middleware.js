@@ -1,9 +1,17 @@
 import jwt from 'jsonwebtoken';
 import { prisma } from '../lib/prisma.js';
 
-// Middleware to verify JWT and attach user payload to request
+// Shared token extraction — one place, two callers.
+const extractToken = (req) => {
+  const header = req.header('Authorization') || '';
+  return header.startsWith('Bearer ') ? header.slice(7).trim() : '';
+};
+
+// Middleware to verify JWT and attach user payload to request.
+// 401 for a bad token (not 400): the request failed *authentication*,
+// and 401 is the status clients use to trigger re-login flows.
 export const authenticate = (req, res, next) => {
-  const token = req.header('Authorization')?.replace('Bearer ', '');
+  const token = extractToken(req);
   if (!token) return res.status(401).json({ error: 'Access denied. No token provided.' });
 
   try {
@@ -11,7 +19,7 @@ export const authenticate = (req, res, next) => {
     req.user = decoded; // Contains id, username, role
     next();
   } catch (ex) {
-    res.status(400).json({ error: 'Invalid token.' });
+    res.status(401).json({ error: 'Invalid or expired token.' });
   }
 };
 
@@ -20,7 +28,7 @@ export const authenticate = (req, res, next) => {
 // caller — e.g. GET /api/projects/:id, where a PENDING project must be
 // visible to its creator/moderator even though strangers get a 404.
 export const optionalAuth = (req, res, next) => {
-  const token = req.header('Authorization')?.replace('Bearer ', '');
+  const token = extractToken(req);
   if (token) {
     try {
       req.user = jwt.verify(token, process.env.JWT_SECRET);

@@ -96,8 +96,12 @@ export const googleCallback = async (req, res) => {
       { expiresIn: JWT_EXPIRES_IN }
     );
 
+    // Token goes in the URL *fragment* (after #), not the query string.
+    // Fragments are never sent to any server, so the JWT stays out of access
+    // logs, Referer headers, and proxy caches. The frontend must read it via
+    // location.hash (slice off the '#') instead of URLSearchParams.
     const frontendUrl = process.env.FRONTEND_URL || 'http://localhost:3000';
-    res.redirect(`${frontendUrl}/auth/success?token=${token}`);
+    res.redirect(`${frontendUrl}/auth/success#${token}`);
   } catch (error) {
     console.error(error);
     res.status(500).json({ error: 'Google sign-in succeeded but session creation failed.' });

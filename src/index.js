@@ -90,11 +90,11 @@ app.use((err, req, res, next) => {
 // Parse PORT defensively: "0", "", or garbage must not bind a random port —
 // fall back to 5000 instead.
 const requestedPort = parseInt(process.env.PORT, 10);
-const PORT =
-  Number.isInteger(requestedPort) && requestedPort > 0 && requestedPort <= 65535
-    ? requestedPort
-    : 5000;
-if (process.env.PORT && String(requestedPort) !== String(process.env.PORT)) {
+const isValidPort =
+  Number.isInteger(requestedPort) && requestedPort > 0 && requestedPort <= 65535;
+const PORT = isValidPort ? requestedPort : 5000;
+// Warn when the raw env value was rejected (e.g. PORT="0" or PORT="abc").
+if (process.env.PORT && !isValidPort) {
   console.warn(`⚠️  PORT="${process.env.PORT}" is not a valid port — using ${PORT} instead.`);
 }
 

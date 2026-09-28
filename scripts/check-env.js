@@ -3,6 +3,8 @@ import { existsSync, readFileSync } from 'node:fs';
 
 // Friendly postinstall check: tells new teammates how to get a database.
 // Never fails the install — just prints guidance.
+// Silent in CI (postinstall runs there too, and the tips are pure noise).
+if (process.env.CI) process.exit(0);
 
 const hasEnv = existsSync('.env');
 let dbUrl = '';
