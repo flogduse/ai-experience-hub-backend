@@ -200,7 +200,44 @@ export const checkProjectHealth = async (req, res) => {
 const ALLOWED_PROBE_PORTS = new Set(['', '80', '443', '8080', '8443']);
 const MAX_REDIRECTS = 3;
 
-function isPublicIp(ip) {
+// Expands any textual IPv6 form into its 8 numeric hextets.
+// Handles "::" compression and a trailing dotted-quad ("::ffff:127.0.0.1").
+// Returns null if it can't be parsed, so callers can fail closed.
+function parseIpv6Hextets(ip) {
+  let text = ip.toLowerCase();
+
+  // Trailing IPv4 form: ::ffff:127.0.0.1 -> ::ffff:7f00:1
+  const lastColon = text.lastIndexOf(':');
+  const tail = text.slice(lastColon + 1);
+  if (net.isIPv4(tail)) {
+    const [a, b, c, d] = tail.split('.').map(Number);
+    text = `${text.slice(0, lastColon + 1)}${((a << 8) | b).toString(16)}:${((c << 8) | d).toString(16)}`;
+  }
+
+  const [head, rest] = text.split('::');
+  const headParts = head ? head.split(':') : [];
+  const compressed = rest !== undefined;
+  const restParts = compressed && rest ? rest.split(':') : [];
+  const missing = 8 - headParts.length - restParts.length;
+
+  if (!compressed && headParts.length !== 8) return null;
+  if (compressed && missing < 0) return null;
+
+  const hextets = [...headParts, ...new Array(Math.max(0, missing)).fill('0'), ...restParts];
+  const parsed = hextets.map((h) => parseInt(h, 16));
+  return parsed.length === 8 && parsed.every((h) => Number.isInteger(h)) ? parsed : null;
+}
+
+// A dotted-quad built from the hextet pair starting at `fromIndex`. Used to
+// unwrap an IPv4 address hidden inside an IPv6 transition mechanism. The pair
+// position differs per mechanism, hence the parameter.
+function embeddedIpv4(h, fromIndex) {
+  const hi = h[fromIndex];
+  const lo = h[fromIndex + 1];
+  return [hi >> 8, hi & 0xff, lo >> 8, lo & 0xff].join('.');
+}
+
+export function isPublicIp(ip) {
   if (!net.isIP(ip)) return false;
 
   if (net.isIPv4(ip)) {
@@ -211,19 +248,41 @@ function isPublicIp(ip) {
     if (a === 192 && b === 168) return false; // private
     if (a === 100 && b >= 64 && b <= 127) return false; // CGNAT
     if (a === 192 && b === 0 && c === 0) return false; // IETF protocol assignments
+    if (a === 192 && b === 0 && c === 2) return false; // TEST-NET-1
+    if (a === 198 && b === 51 && c === 100) return false; // TEST-NET-2
+    if (a === 203 && b === 0 && c === 113) return false; // TEST-NET-3
     if (a === 198 && (b === 18 || b === 19)) return false; // benchmarking
     if (a >= 224) return false; // multicast + reserved
     return true;
   }
 
-  // IPv6
-  const v6 = ip.toLowerCase();
-  if (v6 === '::' || v6 === '::1') return false; // unspecified, loopback
-  if (v6.startsWith('::ffff:')) return isPublicIp(v6.slice(7)); // IPv4-mapped
-  const firstHextet = parseInt(v6.split(':')[0], 16);
-  if (firstHextet >= 0xfe80 && firstHextet <= 0xfebf) return false; // link-local
-  if (firstHextet >= 0xfc00 && firstHextet <= 0xfdff) return false; // unique local
-  if (firstHextet === 0xff00 || v6.startsWith('ff')) return false; // multicast
+  // IPv6 — work on parsed hextets, not string prefixes, so that "::1" and
+  // "0:0:0:0:0:0:0:1" are recognised as the same address.
+  const h = parseIpv6Hextets(ip);
+  if (!h) return false; // unparseable: fail closed
+
+  const zeroPrefix = (n) => h.slice(0, n).every((x) => x === 0);
+
+  if (h.every((x) => x === 0)) return false; // :: unspecified
+  if (zeroPrefix(7) && h[7] === 1) return false; // ::1 loopback
+  if (zeroPrefix(6)) return false; // ::/96 and everything else in the zero range
+
+  // Transition mechanisms that embed a full IPv4 address. If the embedded v4 is
+  // private, the packet still reaches it, so check the payload. The embedded
+  // pair sits at a different offset in each: the /96 prefixes carry it in the
+  // last 32 bits, 6to4's /16 prefix carries it right after itself.
+  if (zeroPrefix(5) && h[5] === 0xffff) return isPublicIp(embeddedIpv4(h, 6)); // ::ffff:0:0/96 mapped
+  if (h[0] === 0x0064 && h[1] === 0xff9b && h.slice(2, 6).every((x) => x === 0)) {
+    return isPublicIp(embeddedIpv4(h, 6)); // 64:ff9b::/96 NAT64
+  }
+  if (h[0] === 0x2002) return isPublicIp(embeddedIpv4(h, 1)); // 2002::/16 6to4
+  if (h[0] === 0x2001 && h[1] === 0x0000) return false; // 2001:0::/32 Teredo (deprecated, blocks outright)
+  if (h[0] === 0x2001 && h[1] === 0x0db8) return false; // 2001:db8::/32 documentation
+
+  if ((h[0] & 0xffc0) === 0xfe80) return false; // fe80::/10 link-local
+  if ((h[0] & 0xfe00) === 0xfc00) return false; // fc00::/7 unique local
+  if ((h[0] & 0xff00) === 0xff00) return false; // ff00::/8 multicast
+
   return true;
 }
 

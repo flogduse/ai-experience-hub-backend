@@ -103,6 +103,19 @@ const server = app.listen(PORT, () => {
   console.log('Team, ready to build!');
 });
 
+// Without this, a busy port crashes the process with a raw net stack trace.
+server.on('error', (err) => {
+  if (err.code === 'EADDRINUSE') {
+    console.error(
+      `Port ${PORT} is already in use — another copy of the server is probably running.\n` +
+      'Stop it (Ctrl+C in its terminal, or: taskkill /PID <pid> /F), or set a different PORT in .env.'
+    );
+  } else {
+    console.error('Server failed to start:', err?.message ?? err);
+  }
+  process.exit(1);
+});
+
 // Graceful shutdown so connections and Prisma close cleanly on SIGINT/SIGTERM.
 const shutdown = async (signal) => {
   console.log(`${signal} received — shutting down...`);
