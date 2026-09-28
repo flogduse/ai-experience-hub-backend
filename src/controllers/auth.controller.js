@@ -1,39 +1,113 @@
-import { prisma } from '../index.js';
+import { prisma } from '../lib/prisma.js';
 import bcrypt from 'bcryptjs';
 import jwt from 'jsonwebtoken';
 
-// TEAM MEMBER 1 TASK: Implement complete Auth and User Registration
+// TEAM MEMBER 1 TASK: Complete Auth and User Registration
+// Implemented: register, login, getProfile.
+
+const JWT_EXPIRES_IN = '7d';
+
+// Dummy bcrypt hash used so login timing is similar whether or not the email
+// exists (avoids trivial user enumeration via response timing).
+const DUMMY_HASH = '$2a$12$C6UzMDM.H6dfI/f/IKcEeO7ZBr4yqFBLhRQZ8lYw2DkSQnVx3JdQi';
 
 export const register = async (req, res) => {
   try {
     const { username, email, password } = req.body;
-    // TODO: Hash password using bcrypt
-    // TODO: Create user using prisma.user.create
-    // TODO: Return JWT Token or success message
-    res.status(201).json({ message: 'Registration endpoint mocked. Waiting for implementation.' });
+
+    const usernameTaken = await prisma.user.findUnique({ where: { username } });
+    if (usernameTaken) {
+      return res.status(409).json({ error: 'Username is already taken.' });
+    }
+
+    const emailTaken = await prisma.user.findUnique({ where: { email } });
+    if (emailTaken) {
+      return res.status(409).json({ error: 'Email is already registered.' });
+    }
+
+    const passwordHash = await bcrypt.hash(password, 12);
+
+    const user = await prisma.user.create({
+      data: { username, email, passwordHash },
+      select: { id: true, username: true, email: true, role: true, createdAt: true },
+    });
+
+    const token = jwt.sign(
+      { id: user.id, username: user.username, role: user.role },
+      process.env.JWT_SECRET,
+      { expiresIn: JWT_EXPIRES_IN }
+    );
+
+    res.status(201).json({ token, user });
   } catch (error) {
-    res.status(500).json({ error: error.message });
+    console.error(error);
+    // Unique-constraint races fall through to a clean conflict error.
+    if (error.code === 'P2002') {
+      const field = error.meta?.target?.[0] ?? 'field';
+      return res.status(409).json({ error: `That ${field} is already taken.` });
+    }
+    res.status(500).json({ error: 'Something went wrong during registration.' });
   }
 };
 
 export const login = async (req, res) => {
   try {
     const { email, password } = req.body;
-    // TODO: Find user by email
-    // TODO: Compare passwords using bcrypt.compare
-    // TODO: Create JWT token using process.env.JWT_SECRET
-    res.status(200).json({ message: 'Login endpoint mocked.' });
+
+    const user = await prisma.user.findUnique({ where: { email } });
+    const passwordOk = user
+      ? await bcrypt.compare(password, user.passwordHash)
+      : await bcrypt.compare(password, DUMMY_HASH);
+
+    if (!user || !passwordOk) {
+      return res.status(401).json({ error: 'Invalid email or password.' });
+    }
+
+    const token = jwt.sign(
+      { id: user.id, username: user.username, role: user.role },
+      process.env.JWT_SECRET,
+      { expiresIn: JWT_EXPIRES_IN }
+    );
+
+    res.status(200).json({
+      token,
+      user: { id: user.id, username: user.username, email: user.email, role: user.role },
+    });
   } catch (error) {
-    res.status(500).json({ error: error.message });
+    console.error(error);
+    res.status(500).json({ error: 'Something went wrong during login.' });
   }
 };
 
 export const getProfile = async (req, res) => {
   try {
     const { username } = req.params;
-    // TODO: Fetch user & their public projects
-    res.status(200).json({ message: 'Profile route mocked.' });
+
+    const user = await prisma.user.findUnique({
+      where: { username },
+      select: {
+        id: true,
+        username: true,
+        badges: true,
+        createdAt: true,
+        projects: {
+          where: { status: 'APPROVED' },
+          select: {
+            id: true, title: true, description: true,
+            previewImgUrl: true, aiModelsUsed: true,
+            isFree: true, remixAllowed: true,
+            metrics: { select: { launchCount: true, saveCount: true, viewCount: true } },
+          },
+          orderBy: { createdAt: 'desc' },
+        },
+      },
+    });
+
+    if (!user) return res.status(404).json({ error: 'User not found.' });
+
+    res.status(200).json({ user });
   } catch (error) {
-    res.status(500).json({ error: error.message });
+    console.error(error);
+    res.status(500).json({ error: 'Something went wrong.' });
   }
 };

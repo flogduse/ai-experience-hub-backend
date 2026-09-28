@@ -1,20 +1,32 @@
 import express from 'express';
-import { 
-  submitProject, 
-  getDiscoveryFeed, 
+import {
+  submitProject,
+  getDiscoveryFeed,
   getProjectDetails,
-  launchProject 
+  launchProject,
 } from '../controllers/project.controller.js';
+import {
+  bookmarkProject,
+  unbookmarkProject,
+  getMyBookmarks,
+  reportProject,
+} from '../controllers/engagement.controller.js';
 import { authenticate } from '../middlewares/auth.middleware.js';
+import { validate, schemas } from '../middlewares/validate.middleware.js';
 
 const router = express.Router();
 
-// Public routes
-router.get('/', getDiscoveryFeed);
-router.get('/:id', getProjectDetails);
-router.post('/:id/launch', launchProject); // Increment metrics
+// Public discovery
+router.get('/', validate(schemas.pagination), getDiscoveryFeed);
+router.get('/:id', validate(schemas.idParam), getProjectDetails);
 
-// Protected routes (requires login)
-router.post('/', authenticate, submitProject);
+// Engagement (requires login)
+router.post('/:id/launch', authenticate, validate(schemas.idParam), launchProject);
+router.post('/:id/bookmark', authenticate, validate(schemas.idParam), bookmarkProject);
+router.delete('/:id/bookmark', authenticate, validate(schemas.idParam), unbookmarkProject);
+router.post('/:id/report', authenticate, validate(schemas.reportProject), reportProject);
+
+// Submissions (requires login)
+router.post('/', authenticate, validate(schemas.submitProject), submitProject);
 
 export default router;
