@@ -5,6 +5,7 @@ import {
   updateProjectStatus,
   getReports,
   resolveReport,
+  checkProjectHealth,
 } from '../controllers/admin.controller.js';
 import { authenticate, authorizeRole } from '../middlewares/auth.middleware.js';
 import { validate, schemas } from '../middlewares/validate.middleware.js';
@@ -18,6 +19,7 @@ router.use(authorizeRole(['MODERATOR']));
 // Moderation queue + status updates
 router.get('/queue', validate(schemas.queueQuery), getModerationQueue);
 router.patch('/projects/:id/status', validate(schemas.statusUpdate), updateProjectStatus);
+router.get('/projects/:id/health-check', validate(schemas.idParam), checkProjectHealth);
 
 // Reports inbox
 router.get('/reports', validate(schemas.reportQuery), getReports);

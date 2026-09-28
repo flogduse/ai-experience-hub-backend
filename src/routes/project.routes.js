@@ -16,8 +16,10 @@ import { validate, schemas } from '../middlewares/validate.middleware.js';
 
 const router = express.Router();
 
-// Public discovery
+// Public discovery — /bookmarks MUST be declared above /:id so the UUID
+// param validator doesn't reject it.
 router.get('/', validate(schemas.pagination), getDiscoveryFeed);
+router.get('/bookmarks', authenticate, validate(schemas.pagination), getMyBookmarks);
 router.get('/:id', validate(schemas.idParam), getProjectDetails);
 
 // Engagement (requires login)

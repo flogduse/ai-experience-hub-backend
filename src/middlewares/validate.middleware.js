@@ -67,6 +67,8 @@ export const schemas = {
         description: z.string().trim().min(10).max(2000),
         externalUrl: httpUrl,
         aiModelsUsed: z.array(z.string().trim().min(1).max(50)).max(20).optional(),
+        category: z.string().trim().min(1).max(50).optional(),
+        requiresAuth: z.boolean().optional(),
         isFree: z.boolean().optional(),
         remixAllowed: z.boolean().optional(),
       })
@@ -93,6 +95,7 @@ export const schemas = {
       limit: z.coerce.number().int().min(1).max(50).optional(),
       sort: z.enum(['popular', 'saves', 'new']).optional(),
       model: z.string().trim().max(50).optional(),
+      category: z.string().trim().max(50).optional(),
     }).strip(),
   },
   reportQuery: {

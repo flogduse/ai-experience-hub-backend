@@ -12,7 +12,7 @@ const SORTABLE_FIELDS = {
 
 export const submitProject = async (req, res) => {
   try {
-    const { title, description, externalUrl, aiModelsUsed, isFree, remixAllowed } = req.body;
+    const { title, description, externalUrl, aiModelsUsed, category, isFree, remixAllowed, requiresAuth } = req.body;
 
     const project = await prisma.$transaction(async (tx) => {
       const created = await tx.project.create({
@@ -20,9 +20,13 @@ export const submitProject = async (req, res) => {
           title,
           description,
           externalUrl,
-          aiModelsUsed: aiModelsUsed ?? [],
+          // Model names are lowercased so feed filtering (?model=gpt4) is
+          // case-insensitive — Prisma can't do insensitive `has` on string lists.
+          aiModelsUsed: (aiModelsUsed ?? []).map((m) => m.toLowerCase()).filter(Boolean),
+          category: category ? category.toLowerCase() : null,
           isFree: isFree ?? true,
           remixAllowed: remixAllowed ?? false,
+          requiresAuth: requiresAuth ?? false,
           creatorId: req.user.id,
           status: 'PENDING', // explicit for clarity; schema default matches
         },
@@ -49,16 +53,19 @@ export const submitProject = async (req, res) => {
 
 export const getDiscoveryFeed = async (req, res) => {
   try {
-    const { model } = req.query; // e.g. ?model=gpt4
+    const { model, category } = req.query; // e.g. ?model=gpt4&category=games
     const sort = SORTABLE_FIELDS[req.query.sort] ? req.query.sort : 'new';
-    const page = Math.max(1, parseInt(req.query.page, 10) || 1);
-    const limit = Math.min(50, Math.max(1, parseInt(req.query.limit, 10) || 20));
+    // page/limit are already coerced and bounded by the zod pagination schema.
+    const page = req.query.page ?? 1;
+    const limit = req.query.limit ?? 20;
     const skip = (page - 1) * limit;
 
     const where = { status: 'APPROVED' };
 
-    // `aiModelsUsed` is a string[]; `has` matches "gpt4" inside it.
-    if (model) where.aiModelsUsed = { has: model };
+    // `aiModelsUsed` is a string[]; `has` matches exact values. Submission
+    // lowercases model names and category, so filters are lowercased too.
+    if (model) where.aiModelsUsed = { has: model.toLowerCase() };
+    if (category) where.category = category.toLowerCase();
 
     const [projects, total] = await prisma.$transaction([
       prisma.project.findMany({
@@ -68,7 +75,7 @@ export const getDiscoveryFeed = async (req, res) => {
         take: limit,
         select: {
           id: true, title: true, description: true, previewImgUrl: true,
-          aiModelsUsed: true, isFree: true, remixAllowed: true,
+          aiModelsUsed: true, category: true, isFree: true, remixAllowed: true,
           createdAt: true,
           creator: { select: { id: true, username: true } },
           metrics: { select: { launchCount: true, saveCount: true, viewCount: true } },
@@ -94,9 +101,8 @@ export const getProjectDetails = async (req, res) => {
     const project = await prisma.project.findUnique({
       where: { id },
       select: {
-        id: true, title: true, description: true, externalUrl: true,
-        previewImgUrl: true, aiModelsUsed: true,
-        requiresAuth: true, isFree: true, remixAllowed: true, status: true,
+        id: true, title: true, description: true, externalUrl: true,          previewImgUrl: true, aiModelsUsed: true, category: true,
+          requiresAuth: true, isFree: true, remixAllowed: true, status: true,
         createdAt: true,
         creator: { select: { id: true, username: true } },
         metrics: { select: { launchCount: true, saveCount: true, viewCount: true } },
@@ -113,6 +119,14 @@ export const getProjectDetails = async (req, res) => {
       if (!isOwner && !isModerator) {
         return res.status(404).json({ error: 'Project not found.' });
       }
+    }
+
+    // Count the view for approved projects (a public detail page was seen).
+    if (project.status === 'APPROVED') {
+      await prisma.projectMetrics.updateMany({
+        where: { projectId: id },
+        data: { viewCount: { increment: 1 } },
+      });
     }
 
     res.status(200).json({ project });

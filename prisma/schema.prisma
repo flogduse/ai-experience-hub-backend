@@ -12,7 +12,8 @@ model User {
   id           String     @id @default(uuid())
   username     String     @unique
   email        String     @unique
-  passwordHash String
+  passwordHash String? // null for Google-only accounts
+  googleId     String?    @unique
   role         Role       @default(USER)
   badges       String[]   @default([])
   createdAt    DateTime   @default(now())
@@ -37,6 +38,7 @@ model Project {
   externalUrl    String         // URL where the logic/game is hosted
   previewImgUrl  String?
   aiModelsUsed   String[]       @default([])
+  category       String? // lowercase discovery category (e.g. "games", "writing")
   requiresAuth   Boolean        @default(false)
   isFree         Boolean        @default(true)
   remixAllowed   Boolean        @default(false)

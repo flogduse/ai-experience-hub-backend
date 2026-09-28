@@ -6,12 +6,12 @@ import { prisma } from '../lib/prisma.js';
 const VALID_PROJECT_STATUSES = ['APPROVED', 'REJECTED', 'TAKEN_DOWN'];
 // Statuses a moderator may filter the queue by (PENDING is the default).
 const VALID_QUEUE_STATUSES = ['PENDING', 'NEEDS_REVIEW', 'TAKEN_DOWN'];
-const REPORT_PAGE_MAX = 50;
 
 export const getModerationQueue = async (req, res) => {
   try {
-    const page = Math.max(1, parseInt(req.query.page, 10) || 1);
-    const limit = Math.min(50, Math.max(1, parseInt(req.query.limit, 10) || 20));
+    // page/limit are already coerced and bounded by the zod queueQuery schema.
+    const page = req.query.page ?? 1;
+    const limit = req.query.limit ?? 20;
     const skip = (page - 1) * limit;
 
     const where = { status: 'PENDING' };
@@ -28,7 +28,8 @@ export const getModerationQueue = async (req, res) => {
         take: limit,
         select: {
           id: true, title: true, description: true, externalUrl: true,
-          previewImgUrl: true, aiModelsUsed: true, isFree: true, remixAllowed: true,
+          previewImgUrl: true, aiModelsUsed: true, category: true,
+          requiresAuth: true, isFree: true, remixAllowed: true,
           createdAt: true,
           creator: { select: { id: true, username: true, email: true } },
         },
@@ -58,11 +59,20 @@ export const updateProjectStatus = async (req, res) => {
       });
     }
 
-    const project = await prisma.project.update({
-      where: { id },
-      data: { status },
-      select: { id: true, title: true, status: true, creator: { select: { id: true, username: true } } },
-    }).catch(() => null);
+    let project;
+    try {
+      project = await prisma.project.update({
+        where: { id },
+        data: { status },
+        select: { id: true, title: true, status: true, creator: { select: { id: true, username: true } } },
+      });
+    } catch (err) {
+      // P2025 = record not found; anything else is a real DB failure (→ 500).
+      if (err.code === 'P2025') {
+        return res.status(404).json({ error: 'Project not found.' });
+      }
+      throw err;
+    }
 
     if (!project) {
       return res.status(404).json({ error: 'Project not found.' });
@@ -78,8 +88,9 @@ export const updateProjectStatus = async (req, res) => {
 
 export const getReports = async (req, res) => {
   try {
-    const page = Math.max(1, parseInt(req.query.page, 10) || 1);
-    const limit = Math.min(REPORT_PAGE_MAX, Math.max(1, parseInt(req.query.limit, 10) || 20));
+    // page/limit are already coerced and bounded by the zod reportQuery schema.
+    const page = req.query.page ?? 1;
+    const limit = req.query.limit ?? 20;
     const skip = (page - 1) * limit;
 
     const where = {};
@@ -116,11 +127,19 @@ export const resolveReport = async (req, res) => {
   try {
     const { id } = req.params;
 
-    const report = await prisma.report.update({
-      where: { id },
-      data: { status: 'RESOLVED' },
-      select: { id: true, status: true },
-    }).catch(() => null);
+    let report;
+    try {
+      report = await prisma.report.update({
+        where: { id },
+        data: { status: 'RESOLVED' },
+        select: { id: true, status: true },
+      });
+    } catch (err) {
+      if (err.code === 'P2025') {
+        return res.status(404).json({ error: 'Report not found.' });
+      }
+      throw err;
+    }
 
     if (!report) {
       return res.status(404).json({ error: 'Report not found.' });
@@ -132,3 +151,53 @@ export const resolveReport = async (req, res) => {
     res.status(500).json({ error: 'Failed to resolve report.' });
   }
 };
+
+// Link-health checker (Teammate 3's "background checks"): probes a project's
+// externalUrl so moderators can verify a link is alive before approving.
+export const checkProjectHealth = async (req, res) => {
+  try {
+    const { id } = req.params;
+
+    const project = await prisma.project.findUnique({
+      where: { id },
+      select: { id: true, externalUrl: true, status: true },
+    });
+    if (!project) {
+      return res.status(404).json({ error: 'Project not found.' });
+    }
+
+    const result = await probeUrl(project.externalUrl);
+    res.status(200).json({
+      projectId: id,
+      externalUrl: project.externalUrl,
+      ...result,
+      checkedAt: new Date().toISOString(),
+    });
+  } catch (error) {
+    console.error(error);
+    res.status(500).json({ error: 'Health check failed.' });
+  }
+};
+
+async function probeUrl(url) {
+  const controller = new AbortController();
+  const timer = setTimeout(() => controller.abort(), 5000);
+  try {
+    let method = 'HEAD';
+    let response = await fetch(url, { method, redirect: 'follow', signal: controller.signal });
+    if (response.status === 405 || response.status === 501) {
+      // Some servers reject HEAD; fall back to GET.
+      method = 'GET';
+      response = await fetch(url, { method, redirect: 'follow', signal: controller.signal });
+    }
+    return { reachable: response.ok, httpStatus: response.status, method };
+  } catch (err) {
+    return {
+      reachable: false,
+      method: 'HEAD',
+      error: err.name === 'AbortError' ? 'Timed out after 5s.' : String(err.cause?.code || err.message),
+    };
+  } finally {
+    clearTimeout(timer);
+  }
+}

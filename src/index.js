@@ -46,11 +46,13 @@ if (allowedOrigins.length > 0) {
 
 app.use(express.json({ limit: '100kb' }));
 
-// Lightweight request logger.
-app.use((req, res, next) => {
-  console.log(`${new Date().toISOString()} ${req.method} ${req.originalUrl}`);
-  next();
-});
+// Lightweight request logger — dev only; use real log aggregation in prod.
+if (process.env.NODE_ENV !== 'production') {
+  app.use((req, res, next) => {
+    console.log(`${new Date().toISOString()} ${req.method} ${req.originalUrl}`);
+    next();
+  });
+}
 
 // --- Routes ---
 

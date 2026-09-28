@@ -66,8 +66,9 @@ export const unbookmarkProject = async (req, res) => {
 
 export const getMyBookmarks = async (req, res) => {
   try {
-    const page = Math.max(1, parseInt(req.query.page, 10) || 1);
-    const limit = Math.min(50, Math.max(1, parseInt(req.query.limit, 10) || 20));
+    // page/limit are already coerced and bounded by the zod pagination schema.
+    const page = req.query.page ?? 1;
+    const limit = req.query.limit ?? 20;
     const skip = (page - 1) * limit;
 
     const [bookmarks, total] = await prisma.$transaction([
