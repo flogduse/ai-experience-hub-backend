@@ -87,7 +87,16 @@ app.use((err, req, res, next) => {
   res.status(err.status || 500).json({ error: 'Something went wrong!' });
 });
 
-const PORT = process.env.PORT || 5000;
+// Parse PORT defensively: "0", "", or garbage must not bind a random port —
+// fall back to 5000 instead.
+const requestedPort = parseInt(process.env.PORT, 10);
+const PORT =
+  Number.isInteger(requestedPort) && requestedPort > 0 && requestedPort <= 65535
+    ? requestedPort
+    : 5000;
+if (process.env.PORT && String(requestedPort) !== String(process.env.PORT)) {
+  console.warn(`⚠️  PORT="${process.env.PORT}" is not a valid port — using ${PORT} instead.`);
+}
 
 const server = app.listen(PORT, () => {
   console.log(`Server running on port ${PORT}`);

@@ -11,7 +11,7 @@ import {
   getMyBookmarks,
   reportProject,
 } from '../controllers/engagement.controller.js';
-import { authenticate } from '../middlewares/auth.middleware.js';
+import { authenticate, optionalAuth } from '../middlewares/auth.middleware.js';
 import { validate, schemas } from '../middlewares/validate.middleware.js';
 
 const router = express.Router();
@@ -20,7 +20,7 @@ const router = express.Router();
 // param validator doesn't reject it.
 router.get('/', validate(schemas.pagination), getDiscoveryFeed);
 router.get('/bookmarks', authenticate, validate(schemas.pagination), getMyBookmarks);
-router.get('/:id', validate(schemas.idParam), getProjectDetails);
+router.get('/:id', optionalAuth, validate(schemas.idParam), getProjectDetails);
 
 // Engagement (requires login)
 router.post('/:id/launch', authenticate, validate(schemas.idParam), launchProject);

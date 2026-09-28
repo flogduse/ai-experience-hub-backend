@@ -15,6 +15,22 @@ export const authenticate = (req, res, next) => {
   }
 };
 
+// Populates req.user when a valid token is sent, but never blocks the
+// request. For public routes that personalize or un-hide content for the
+// caller — e.g. GET /api/projects/:id, where a PENDING project must be
+// visible to its creator/moderator even though strangers get a 404.
+export const optionalAuth = (req, res, next) => {
+  const token = req.header('Authorization')?.replace('Bearer ', '');
+  if (token) {
+    try {
+      req.user = jwt.verify(token, process.env.JWT_SECRET);
+    } catch {
+      // Invalid/expired token on a public route: proceed anonymously.
+    }
+  }
+  next();
+};
+
 // Middleware to restrict access entirely to specific roles.
 // The role is read fresh from the database on every request — a role stored in
 // the JWT would take up to the token's full lifetime (7d) to expire after a

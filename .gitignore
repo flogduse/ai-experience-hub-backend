@@ -3,5 +3,6 @@ node_modules/
 .DS_Store
 *.log
 .freebuff/
+.devdb/
 
 # Prisma generated client if using a custom location, but standard node_modules is sufficient.
