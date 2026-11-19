@@ -124,3 +124,7 @@ changes.
   next unit of work.
 - **Moderator role assignment in-app** — roles come from the seed / DB for now.
 - **Email verification** for email-registered accounts.
+
+## License
+
+MIT - see [LICENSE](LICENSE).
