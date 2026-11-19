@@ -87,15 +87,36 @@ src/
   lib/prisma.js           shared PrismaClient
 prisma/
   schema.prisma, migrations/, seed.js
-tests/ssrf.test.js        the pinned block/allow lists for isPublicIp
+tests/                    ssrf (IP allow/block lists), zod schemas, JWT middleware
 scripts/                  check-env.js, dev-db.js (embedded Postgres)
 ```
 
 ## Deploying
 
-The app is stateless apart from Postgres, so any container host works
-(Railway, Render, Fly). `DATABASE_URL` points at the hosted database and
-`/health` is the readiness endpoint.
+The app is stateless apart from Postgres, so any container or Node host works
+(Railway, Render, Fly). Set:
+
+| Variable | Required | Notes |
+|---|---|---|
+| `DATABASE_URL` | yes | Hosted Postgres; append `?sslmode=require` if the provider needs TLS |
+| `JWT_SECRET` | yes | Long random string; rotating it logs everyone out |
+| `NODE_ENV` | yes | `production` |
+| `CORS_ORIGINS` | yes in prod | Comma-separated frontend origins |
+| `PORT` | no | Defaults to 5000; most hosts inject it |
+| `GOOGLE_CLIENT_ID` / `_SECRET` / `GOOGLE_CALLBACK_URL` | no | Omit to disable Google login |
+| `MODERATOR_EMAIL` / `MODERATOR_PASSWORD` | no | Only used when seeding |
+
+Build and start commands:
+
+```bash
+npm ci                    # installs all deps and runs prisma generate
+npx prisma migrate deploy # apply migrations, non-interactive
+npm start
+```
+
+`/health` is the readiness endpoint. Run migrations as a separate release step
+rather than in the app's start command, so a restart does not attempt schema
+changes.
 
 ## Not built (yet)
 
